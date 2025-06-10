@@ -1,0 +1,61 @@
+package com.example.lcshop.viewmodel
+
+import androidx.lifecycle.MutableLiveData
+import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
+import com.example.lcshop.data.AuthResponse
+
+import com.example.lcshop.data.LoginRequest
+import com.example.lcshop.data.RegisterRequest
+import com.example.lcshop.repository.AuthRepository
+import kotlinx.coroutines.launch
+
+class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
+    val authResponse = MutableLiveData<AuthResponse?>()
+    val error = MutableLiveData<String?>()
+
+    fun login(username: String, password: String) {
+        viewModelScope.launch {
+            try {
+                val response = repository.login(LoginRequest(username, password))
+                if (response.isSuccessful) {
+                    authResponse.value = response.body()
+                    error.value = null
+                } else {
+                    error.value = response.message() ?: "Lỗi không xác định"
+                }
+            } catch (e: Exception) {
+                error.value = e.message ?: "Lỗi kết nối"
+            }
+        }
+    }
+    fun register(
+        username: String,
+        email: String,
+        password: String,
+        firstName: String,
+        lastName: String
+    ) {
+        viewModelScope.launch {
+            try {
+                val request = RegisterRequest(
+                    username = username,
+                    email = email,
+                    password = password,
+                    first_name = firstName,
+                    last_name = lastName
+                )
+                val response = repository.register(request)
+                if (response.isSuccessful) {
+                    authResponse.value = response.body()
+                    error.value = null
+                } else {
+                    error.value = response.message() ?: "Lỗi không xác định"
+                }
+            } catch (e: Exception) {
+                error.value = e.message ?: "Lỗi kết nối"
+            }
+        }
+    }
+
+}
