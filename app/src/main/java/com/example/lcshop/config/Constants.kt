@@ -4,7 +4,8 @@ object Constants {
     // Network Configuration
     // const val BASE_URL = "http://10.0.2.2:3000/api/auth/"
     //const val BASE_URL = "http://192.168.1.6:3000/api/auth/"
-    private const val SERVER_IP = "192.168.1.6" //IP Mạng của máy chủ
+    private const val SERVER_IP = "192.168.1.3" // 6IP Mạng của máy chủ
+    //private const val SERVER_IP = "10.0.2.2"
     private const val SERVER_PORT = "3000"
 
     // Base URLs

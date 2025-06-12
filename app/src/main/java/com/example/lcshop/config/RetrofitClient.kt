@@ -1,28 +1,47 @@
-package com.example.lcshop.config
-
 // RetrofitInstance.kt
+package com.example.lcshop.config
 
 import com.example.lcshop.AuthApi
 import com.example.lcshop.ProductApi
-import com.example.lcshop.config.Constants
+import com.jakewharton.retrofit2.adapter.kotlin.coroutines.CoroutineCallAdapterFactory
+import okhttp3.OkHttpClient
+import okhttp3.logging.HttpLoggingInterceptor
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 
 object RetrofitInstance {
 
-    val api: AuthApi by lazy {
+    private val loggingInterceptor = HttpLoggingInterceptor().apply {
+        level = HttpLoggingInterceptor.Level.BODY // Log body cho debug
+    }
+
+    private val client = OkHttpClient.Builder()
+        .addInterceptor(loggingInterceptor)
+        .build()
+
+    private val retrofitAuth: Retrofit by lazy {
         Retrofit.Builder()
             .baseUrl(Constants.AUTH_BASE_URL)
             .addConverterFactory(GsonConverterFactory.create())
+            .addCallAdapterFactory(CoroutineCallAdapterFactory()) // Thêm cho AuthApi
+            .client(client)
             .build()
-            .create(AuthApi::class.java)
     }
 
-    val productApi: ProductApi by lazy {
+    private val retrofitProduct: Retrofit by lazy {
         Retrofit.Builder()
             .baseUrl(Constants.PRODUCT_BASE_URL)
             .addConverterFactory(GsonConverterFactory.create())
+            .addCallAdapterFactory(CoroutineCallAdapterFactory()) // Thêm cho ProductApi
+            .client(client)
             .build()
-            .create(ProductApi::class.java)
+    }
+
+    val api: AuthApi by lazy {
+        retrofitAuth.create(AuthApi::class.java)
+    }
+
+    val productApi: ProductApi by lazy {
+        retrofitProduct.create(ProductApi::class.java)
     }
 }

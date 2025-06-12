@@ -14,10 +14,10 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
     val authResponse = MutableLiveData<AuthResponse?>()
     val error = MutableLiveData<String?>()
 
-    fun login(username: String, password: String) {
+    fun login(email: String, password: String) {
         viewModelScope.launch {
             try {
-                val response = repository.login(LoginRequest(username, password))
+                val response = repository.login(LoginRequest(email, password))
                 if (response.isSuccessful) {
                     authResponse.value = response.body()
                     error.value = null
@@ -33,8 +33,8 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
         username: String,
         email: String,
         password: String,
-        firstName: String,
-        lastName: String
+        full_name: String,
+        phone: String
     ) {
         viewModelScope.launch {
             try {
@@ -42,8 +42,8 @@ class AuthViewModel(private val repository: AuthRepository) : ViewModel() {
                     username = username,
                     email = email,
                     password = password,
-                    first_name = firstName,
-                    last_name = lastName
+                    full_name = full_name,
+                    phone = phone
                 )
                 val response = repository.register(request)
                 if (response.isSuccessful) {

@@ -5,6 +5,7 @@ import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
+import com.example.lcshop.screens.ProductDetailScreen
 
 
 @Composable
@@ -19,7 +20,7 @@ fun AppNavigation() {
 
         composable("product_detail/{productId}") { backStackEntry ->
             val productId = backStackEntry.arguments?.getString("productId")?.toInt()
-            ProductDetailScreen(navController, productId)
+            ProductDetailScreen(navController, productId.takeIf { it != null } ?: 0) // Default to 0 if null
         }
         composable("login") {
             LoginScreen(

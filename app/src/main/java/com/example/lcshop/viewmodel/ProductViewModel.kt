@@ -1,11 +1,11 @@
+// ProductViewModel.kt
 package com.example.lcshop.viewmodel
 
-// ProductViewModel.kt
 import android.util.Log
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.lcshop.data.model.Product
-import com.example.lschop.repository.ProductRepository
+import com.example.lcshop.repository.ProductRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.launch
@@ -14,16 +14,52 @@ class ProductViewModel(private val repository: ProductRepository) : ViewModel() 
     private val _products = MutableStateFlow<List<Product>>(emptyList())
     val products: StateFlow<List<Product>> = _products
 
-    fun fetchProducts() {
+    private val _productDetail = MutableStateFlow<Product?>(null)
+    val productDetail: StateFlow<Product?> = _productDetail
+
+    private val _isLoading = MutableStateFlow(false)
+    val isLoading: StateFlow<Boolean> = _isLoading
+
+    private val _error = MutableStateFlow<String?>(null)
+    val error: StateFlow<String?> = _error
+
+    init {
+        refreshProducts()
+    }
+
+    fun refreshProducts() {
         viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
+
             try {
-                _products.value = repository.getProducts()
-                Log.e("ProductViewModel", "sản phẩm: ${_products.value.size} sản phẩm đã được tải")
+                val productsList = repository.getProducts()
+                _products.value = productsList
+                Log.d("ProductViewModel", "Sản phẩm: ${productsList.size} sản phẩm đã được tải")
             } catch (e: Exception) {
-                // Log hoặc xử lý lỗi tùy ý
-                Log.e("ProductViewModel", "Lỗi khi fetch sản phẩm: ${e.message}")
+                _error.value = "Lỗi khi tải sản phẩm: ${e.message}"
+                Log.e("ProductViewModel", "Lỗi: ${e.message}")
+            } finally {
+                _isLoading.value = false
             }
         }
     }
+    fun getProductById(productId: Int) {
+        viewModelScope.launch {
+            _isLoading.value = true
+            _error.value = null
 
+            try {
+                val product = repository.getProductById(productId)
+                _productDetail.value = product
+                Log.d("ProductViewModel", "Sản phẩm ID $productId đã được tải")
+            } catch (e: Exception) {
+                _error.value = "Lỗi khi tải chi tiết sản phẩm: ${e.message}"
+                Log.e("ProductViewModel", "Lỗi: ${e.message}")
+            } finally {
+                _isLoading.value = false
+            }
+        }
+    }
 }
+

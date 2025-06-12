@@ -31,7 +31,7 @@ fun LoginScreen(
     val viewModel: AuthViewModel = viewModel(
         factory = AuthViewModelFactory(AuthRepository())
     )
-    var username by remember { mutableStateOf("testuser") }
+    var username by remember { mutableStateOf("test@example.com") }
     var password by remember { mutableStateOf("password123") }
     val authResponse by viewModel.authResponse.observeAsState()
     val error by viewModel.error.observeAsState()
