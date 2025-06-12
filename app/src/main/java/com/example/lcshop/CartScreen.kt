@@ -1,10 +1,14 @@
 package com.example.lcshop
 
+import android.util.Log
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Search
@@ -12,13 +16,34 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.navigation.NavController
+import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.NavHostController
+import coil.compose.AsyncImage
+import com.example.lcshop.config.RetrofitInstance
+import com.example.lcshop.data.model.CartItem
+import com.example.lcshop.data.model.CartItemUpdateRequest
+import com.example.lcshop.repository.CartRepository
+import com.example.lcshop.viewmodel.CartViewModel
+import com.example.lcshop.viewmodel.CartViewModelFactory
+import com.google.android.gms.analytics.ecommerce.Product
+
+// Utility function to format price
+fun formatPrice(price: String): String {
+    return try {
+        val number = price.toDouble()
+        "%,.0f₫".format(number)
+    } catch (e: Exception) {
+        "${price}₫"
+    }
+}
 
 @Composable
 fun RoundCheckbox(
@@ -33,16 +58,44 @@ fun RoundCheckbox(
                 shape = CircleShape
             )
             .border(2.dp, Color(0xFF001F5B), CircleShape)
-            .clickable { onCheckedChange(!checked) }
-    )
+            .clickable { onCheckedChange(!checked) },
+        contentAlignment = Alignment.Center
+    ) {
+        if (checked) {
+            Text(
+                "✓",
+                color = Color.White,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold
+            )
+        }
+    }
 }
 
 @Composable
 fun CartScreen(navController: NavHostController) {
-    var selectedAll by remember { mutableStateOf(false) }
-    var quantities by remember { mutableStateOf(listOf(1, 2, 1)) }
-    var selectedItems by remember { mutableStateOf(MutableList(quantities.size) { false }) }
+    val context = LocalContext.current
+    val viewModel: CartViewModel = viewModel(
+        factory = CartViewModelFactory(CartRepository(RetrofitInstance.cartApi))
+    )
 
+    val cart by viewModel.cart.collectAsState()
+    val loading by viewModel.loading.collectAsState()
+    val error by viewModel.error.collectAsState()
+
+    var selectedAll by remember { mutableStateOf(false) }
+    var selectedItems by remember { mutableStateOf(mutableMapOf<Int, Boolean>()) }
+
+    LaunchedEffect(cart) {
+        cart?.CartItems?.let { items ->
+            val newSelectedItems = mutableMapOf<Int, Boolean>()
+            items.forEach { item ->
+                newSelectedItems[item.id] = selectedItems[item.id] ?: false
+            }
+            selectedItems = newSelectedItems
+        }
+    }
+    Log.d("cart"," CartScreen recomposed with cart: $cart, loading: $loading, error: $error")
     Column(
         modifier = Modifier
             .fillMaxSize()
@@ -68,131 +121,228 @@ fun CartScreen(navController: NavHostController) {
             }
         }
 
-        // Select All + Delete
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            RoundCheckbox(
-                checked = selectedAll,
-                onCheckedChange = {
-                    selectedAll = it
-                    selectedItems = selectedItems.map { _ -> it }.toMutableList()
+        when {
+            loading -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    CircularProgressIndicator(color = Color(0xFF001F5B))
                 }
-            )
-            Text("  ALL", modifier = Modifier.weight(1f))
-            IconButton(onClick = {
-                val newQuantities = mutableListOf<Int>()
-                val newSelectedItems = mutableListOf<Boolean>()
+            }
 
-                quantities.forEachIndexed { index, qty ->
-                    if (!selectedItems[index]) {
-                        newQuantities.add(qty)
-                        newSelectedItems.add(false)
+            error != null -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Lỗi: $error", color = Color.Red)
+                        Button(
+                            onClick = { viewModel.fetchCart() },
+                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF001F5B))
+                        ) {
+                            Text("Thử lại", color = Color.White)
+                        }
                     }
                 }
-
-                quantities = newQuantities
-                selectedItems = newSelectedItems
-                selectedAll = selectedItems.all { it }
-            }) {
-                Icon(Icons.Default.Delete, contentDescription = "Delete")
             }
-        }
 
-        // Danh sách sản phẩm
-        quantities.forEachIndexed { index, qty ->
-            Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(horizontal = 16.dp, vertical = 8.dp)
-            ) {
+            cart == null || cart!!.CartItems.isEmpty() -> {
+                Box(
+                    modifier = Modifier.fillMaxSize(),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Text("Giỏ hàng trống", fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                        Text("Thêm sản phẩm để bắt đầu mua sắm", color = Color.Gray)
+                    }
+                }
+            }
+
+            else -> {
+                val cartItems = cart!!.CartItems
+
+                // Select All + Delete
                 Row(
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     RoundCheckbox(
-                        checked = selectedItems[index],
-                        onCheckedChange = {
-                            selectedItems = selectedItems.toMutableList().also { it[index] = !it[index] }
-                            selectedAll = selectedItems.all { it }
+                        checked = selectedAll,
+                        onCheckedChange = { isChecked ->
+                            selectedAll = isChecked
+                            val newSelectedItems = selectedItems.toMutableMap()
+                            cartItems.forEach { item ->
+                                newSelectedItems[item.id] = isChecked
+                            }
+                            selectedItems = newSelectedItems
                         }
                     )
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Box(
-                        modifier = Modifier
-                            .size(64.dp)
-                            .background(Color.LightGray)
-                    )
-
-                    Spacer(modifier = Modifier.width(12.dp))
-
-                    Column(
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text("Tên sản phẩm ${index + 1}", fontWeight = FontWeight.Bold)
-                        Text("Giá: ${(qty * 100000)}đ", color = Color.Red)
+                    Text("  Tất cả", modifier = Modifier.weight(1f))
+                    IconButton(onClick = {
+//                        selectedItems.entries.filter { it.value }.forEach { (itemId, _) ->
+//                            viewModel.removeFromCart(itemId)
+//                        }
+                    }) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete")
                     }
+                }
 
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Button(
-                            onClick = {
-                                if (quantities[index] > 1) {
-                                    quantities = quantities.toMutableList().also { it[index] -= 1 }
+                // Cart Items List
+                LazyColumn(
+                    modifier = Modifier.weight(1f)
+                ) {
+                    itemsIndexed(cartItems) { index, item ->
+                        CartItemRow(
+                            item = item,
+                            isSelected = selectedItems[item.id] ?: false,
+                            onSelectionChange = { isSelected ->
+                                selectedItems = selectedItems.toMutableMap().also {
+                                    it[item.id] = isSelected
                                 }
+                                selectedAll = selectedItems.values.all { it }
                             },
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Text("-", fontSize = 16.sp)
-                        }
+                            onQuantityChange = { newQuantity ->
+//                                viewModel.updateCartItem(
+//                                    CartItemUpdateRequest(
+//                                        cart_item_id = item.id,
+//                                        quantity = newQuantity
+//                                    )
+//                                )
+                            }
+                        )
 
-                        Text(qty.toString(), modifier = Modifier.padding(horizontal = 8.dp))
-
-                        Button(
-                            onClick = {
-                                quantities = quantities.toMutableList().also { it[index] += 1 }
-                            },
-                            contentPadding = PaddingValues(0.dp),
-                            modifier = Modifier.size(32.dp)
-                        ) {
-                            Text("+", fontSize = 16.sp)
+                        if (index < cartItems.size - 1) {
+                            Divider(
+                                modifier = Modifier.padding(horizontal = 16.dp),
+                                color = Color.LightGray,
+                                thickness = 1.dp
+                            )
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(8.dp))
+                // Checkout Section
+                val totalPrice = cartItems.filter { selectedItems[it.id] == true }
+                    .sumOf { it.total_price.toDoubleOrNull() ?: 0.0 }
 
-                // Gạch phân cách
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(1.dp)
-                        .background(Color.LightGray)
-                )
+                        .padding(horizontal = 16.dp, vertical = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        formatPrice(totalPrice.toString()),
+                        modifier = Modifier.weight(1f),
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 18.sp,
+                        color = Color(0xFF001F5B)
+                    )
+                    Button(
+                        onClick = { navController.navigate("checkout/${totalPrice}") },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF001F5B)),
+                        enabled = selectedItems.values.any { it }
+                    ) {
+                        Text("Thanh toán", color = Color.White)
+                    }
+                }
             }
         }
+    }
+}
 
-        Spacer(modifier = Modifier.weight(1f))
+@Composable
+fun CartItemRow(
+    item: CartItem,
+    isSelected: Boolean,
+    onSelectionChange: (Boolean) -> Unit,
+    onQuantityChange: (Int) -> Unit
+) {
+    val primaryImage = item.Product.images.find { it.is_primary }
+        ?: item.Product.images.firstOrNull()
 
-        // Thanh toán
-        Row(
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        RoundCheckbox(
+            checked = isSelected,
+            onCheckedChange = onSelectionChange
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Product Image
+        AsyncImage(
+            model = "https://your-base-url.com${primaryImage?.image_url}",
+            contentDescription = item.Product.product_name,
             modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp, vertical = 8.dp),
+                .size(80.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(Color.LightGray),
+            contentScale = ContentScale.Crop
+        )
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        Column(
+            modifier = Modifier.weight(1f)
+        ) {
+            Text(
+                item.Product.product_name,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+            Text(
+                "Màu: ${item.ProductVariant.color} | Size: ${item.ProductVariant.size}",
+                color = Color.Gray,
+                fontSize = 14.sp
+            )
+            Text(
+                formatPrice(item.Product.price),
+                color = Color.Red,
+                fontWeight = FontWeight.Bold,
+                fontSize = 16.sp
+            )
+        }
+
+        // Quantity Controls
+        Row(
             verticalAlignment = Alignment.CenterVertically
         ) {
-            val total = quantities.withIndex().sumOf { (i, q) -> if (selectedItems[i]) q * 100000 else 0 }
-            Text("${total}đ", modifier = Modifier.weight(1f), fontWeight = FontWeight.Bold)
             Button(
-                onClick = {navController.navigate("checkout/${total}")},
+                onClick = {
+                    if (item.quantity > 1) {
+                        onQuantityChange(item.quantity - 1)
+                    }
+                },
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(32.dp),
+                colors = ButtonDefaults.buttonColors(containerColor = Color.LightGray)
+            ) {
+                Text("-", fontSize = 16.sp, color = Color.Black)
+            }
+
+            Text(
+                item.quantity.toString(),
+                modifier = Modifier.padding(horizontal = 12.dp),
+                fontSize = 16.sp,
+                fontWeight = FontWeight.Bold
+            )
+
+            Button(
+                onClick = { onQuantityChange(item.quantity + 1) },
+                contentPadding = PaddingValues(0.dp),
+                modifier = Modifier.size(32.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF001F5B))
             ) {
-                Text("Thanh toán", color = Color.White)
+                Text("+", fontSize = 16.sp, color = Color.White)
             }
         }
     }

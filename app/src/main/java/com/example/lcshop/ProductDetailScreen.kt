@@ -17,7 +17,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
 @Composable
-fun ProductDetailScreen(
+fun ProductDetail_Screen(
     navController: androidx.navigation.NavHostController,
     productId: Int? = null // Giả sử product
 ) {

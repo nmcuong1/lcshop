@@ -26,34 +26,35 @@ import com.example.lcshop.viewmodel.AuthViewModel
 fun LoginScreen(
     onNavigateToRegister: () -> Unit,
     onNavigateToForgotPassword: () -> Unit,
+    onNavigateToAdmin: () -> Unit,
     onNavigateToHome: () -> Unit
+
 ) {
+    val context = LocalContext.current
     val viewModel: AuthViewModel = viewModel(
         factory = AuthViewModelFactory(AuthRepository())
     )
-    var username by remember { mutableStateOf("testuser") }
+    var username by remember { mutableStateOf("1test@example.com") }
     var password by remember { mutableStateOf("password123") }
     val authResponse by viewModel.authResponse.observeAsState()
     val error by viewModel.error.observeAsState()
 
-    // Lấy context để sử dụng PreferenceManager
-    val context = LocalContext.current
+
     val preferenceManager = PreferenceManager(context)
 
     // Chuyển màn hình khi đăng nhập thành công
-    LaunchedEffect(authResponse) {
-        if (authResponse != null) {
-            // Lưu token vào PreferenceManager
-//            preferenceManager.setUserToken(authResponse?.data?.token ?: "")
-            Log.d("LoginScreen", "Token saved: ${authResponse?.data?.token}")
-
-            // Chuyển hướng đến
-        }
-        Log.d("LoginScreen", "Token saved: ${authResponse?.data?.token}")
-        if (authResponse != null) {
-            onNavigateToHome()
-        }
-    }
+ LaunchedEffect(authResponse) {
+     authResponse?.let { response ->
+         if (response.token != null) {
+             preferenceManager.setUserToken(response.token ?: "")
+             Log.d("LoginScreen", "Token saved: ${response.token}")
+             when (response.user?.role_id) {
+                 1 -> onNavigateToAdmin()
+                 else -> onNavigateToHome()
+             }
+         }
+     }
+ }
 
     Column(
         modifier = Modifier
@@ -95,7 +96,7 @@ fun LoginScreen(
                 OutlinedTextField(
                     value = username,
                     onValueChange = { username = it },
-                    label = { Text("Nhập Tên Đăng nhập") },
+                    label = { Text("Nhập Email Đăng nhập") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth()
                 )
@@ -126,7 +127,7 @@ fun LoginScreen(
                 ) {
 
                     Text("Đăng nhập" , color = Color.White )
-                    Log.d("LoginScreen", "Token saved: ${authResponse?.data?.token}")
+                    Log.d("LoginScreen", "Token saved: ${authResponse?.token}")
 
                 }
 
