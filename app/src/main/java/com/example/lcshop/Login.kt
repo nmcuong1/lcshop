@@ -13,6 +13,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -34,7 +35,7 @@ fun LoginScreen(
     val viewModel: AuthViewModel = viewModel(
         factory = AuthViewModelFactory(AuthRepository())
     )
-    var username by remember { mutableStateOf("1test@example.com") }
+    var username by remember { mutableStateOf("2test@example.com") }
     var password by remember { mutableStateOf("password123") }
     val authResponse by viewModel.authResponse.observeAsState()
     val error by viewModel.error.observeAsState()
@@ -108,7 +109,9 @@ fun LoginScreen(
                     onValueChange = { password = it },
                     label = { Text("Nhập mật khẩu") },
                     singleLine = true,
+                    visualTransformation = PasswordVisualTransformation(),
                     modifier = Modifier.fillMaxWidth()
+
                 )
 
                 Spacer(modifier = Modifier.height(24.dp))

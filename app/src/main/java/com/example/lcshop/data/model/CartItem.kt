@@ -48,7 +48,15 @@ data class CartResponse(
 )
 
 
-data class CartItemUpdateRequest(
+data class CartItemResponse(
+    val message: String,
+    val cartItem: CartItem
+)
+
+data class Message(
+    val message: String
+)
+data class CartRequestUpdate(
     val cart_item_id: Int,
     val quantity: Int
 )

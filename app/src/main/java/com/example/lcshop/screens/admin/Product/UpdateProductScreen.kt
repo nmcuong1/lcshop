@@ -5,29 +5,27 @@ import android.net.Uri
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import coil.compose.rememberAsyncImagePainter
 import com.example.lcshop.config.Constants.BASE_URL_IMG
 import com.example.lcshop.data.model.Brand
 import com.example.lcshop.data.model.Category
+import com.example.lcshop.data.model.Product
 import com.example.lcshop.data.model.ProductCreateRequest
-import com.example.lcshop.data.model.ProductVariantRequest
+import com.example.lcshop.data.model.ProductVariant
 import com.example.lcshop.repository.CategoryRepository
 import com.example.lcshop.repository.ProductRepository
 import com.example.lcshop.repository.UploadRepository
@@ -38,6 +36,7 @@ import com.example.lcshop.screens.admin.Categories.CategoriesAdminViewModelFacto
 import com.example.lcshop.util.FileUtils
 import com.example.lcshop.viewmodel.ProductViewModel
 import com.example.lcshop.viewmodel.ProductViewModelFactory
+import com.google.gson.Gson
 import kotlinx.coroutines.launch
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
@@ -53,7 +52,17 @@ fun UpdateProductScreen(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
 
-    // Khai báo state
+    // UI States
+    var selectedTab by remember { mutableStateOf(0) }
+    var isLoading by remember { mutableStateOf(false) }
+    var errorMessage by remember { mutableStateOf<String?>(null) }
+    var showSuccessMessage by remember { mutableStateOf(false) }
+
+    // Form validation states
+    var productNameError by remember { mutableStateOf<String?>(null) }
+    var priceError by remember { mutableStateOf<String?>(null) }
+
+    // Product basic info states
     var productName by remember { mutableStateOf("") }
     var price by remember { mutableStateOf("") }
     var description by remember { mutableStateOf("") }
@@ -61,9 +70,11 @@ fun UpdateProductScreen(
     var selectedBrand by remember { mutableStateOf<Brand?>(null) }
     var selectedImageUri by remember { mutableStateOf<Uri?>(null) }
     var uploadedImageUrl by remember { mutableStateOf<String?>(null) }
-    var errorMessage by remember { mutableStateOf<String?>(null) }
 
-    // Launcher để chọn ảnh
+    // Product variants state
+    var variants by remember { mutableStateOf(listOf(ProductVariant(null, "", "", "", 0))) }
+
+    // Image picker
     val imagePickerLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.GetContent()
     ) { uri: Uri? ->
@@ -72,8 +83,7 @@ fun UpdateProductScreen(
         errorMessage = null
     }
 
-
-    // Khởi tạo ViewModel
+    // ViewModels
     val brandsViewModel: BrandsAdminViewModel = viewModel(
         factory = BrandsAdminViewModelFactory(BrandsRepository())
     )
@@ -88,18 +98,18 @@ fun UpdateProductScreen(
     val brands by brandsViewModel.brands.collectAsState()
     val categories by categoriesViewModel.categories.collectAsState()
     val product by productViewModel.productDetail.collectAsState()
-    val isLoading by productViewModel.isLoading.collectAsState()
-    val error by productViewModel.error.collectAsState()
 
     // Tải dữ liệu khi khởi tạo
     LaunchedEffect(productId) {
         coroutineScope.launch {
             brandsViewModel.fetchBrands()
             categoriesViewModel.fetchCategories()
+
         }
         productViewModel.getProductById(productId)
     }
-    // Cập nhật state khi có dữ liệu
+Log.d("UpdateProductScreen", "Fetched product: $product")
+    // Cập nhật state khi có dữ liệu sản phẩm
     LaunchedEffect(product) {
         product?.let {
             productName = it.product_name ?: ""
@@ -108,269 +118,272 @@ fun UpdateProductScreen(
             selectedCategory = categories.firstOrNull { category -> category.id == it.category_id }
             selectedBrand = brands.firstOrNull { brand -> brand.id == it.brand_id }
             uploadedImageUrl = it.images?.firstOrNull { img -> img.is_primary }?.image_url
-Log.d("uploadedImageUrl","uploadedImageUrl: $uploadedImageUrl")
+            variants = it.variants?.map { variant ->
+                ProductVariant(
+                    id = variant.id,
+                    color = variant.color,
+                    size = variant.size,
+                    material = variant.material,
+                    stock_quantity = variant.stock_quantity
+                )
+            } ?: listOf(ProductVariant(null, "", "", "", 0))
+            Log.d("UpdatePro_ductScreen", "Uploaded image URL: $uploadedImageUrl")
         }
     }
-    // Giao diện
+
+    // Validation functions
+    fun validateBasicInfo(): Boolean {
+        var isValid = true
+
+        if (productName.isBlank()) {
+            productNameError = "Tên sản phẩm không được để trống"
+            isValid = false
+        } else {
+            productNameError = null
+        }
+
+        if (price.isBlank()) {
+            priceError = "Giá sản phẩm không được để trống"
+            isValid = false
+        } else if (price.toIntOrNull() == null || price.toInt() <= 0) {
+            priceError = "Giá sản phẩm phải là số dương"
+            isValid = false
+        } else {
+            priceError = null
+        }
+
+
+        return isValid && selectedCategory != null && selectedBrand != null
+    }
+
+    // Update product function
+    fun updateProduct() {
+        if (!validateBasicInfo()) {
+            errorMessage = "Vui lòng kiểm tra lại thông tin cơ bản"
+            return
+        }
+
+        val validVariants = variants.filter {
+            it.color.isNotBlank() && it.size.isNotBlank() && it.stock_quantity > 0
+        }
+
+        if (validVariants.isEmpty()) {
+            errorMessage = "Vui lòng thêm ít nhất một biến thể hợp lệ"
+            return
+        }
+
+        coroutineScope.launch {
+            try {
+                isLoading = true
+                errorMessage = null
+
+                // Upload ảnh nếu có
+                if (selectedImageUri != null) {
+                    val uri = selectedImageUri
+                    val imageUrl = uploadImage(context, uri!!, productId)
+                    if (imageUrl != null) {
+                        uploadedImageUrl = imageUrl
+                    } else {
+                        errorMessage = "Cập nhật sản phẩm thành công, nhưng tải ảnh thất bại."
+                    }
+                }
+
+                // Tạo ProductCreateRequest
+                val productRequest = ProductCreateRequest(
+                    product_name = productName.trim(),
+                    price = price.toInt(),
+                    description = description.trim().ifEmpty { null },
+                    category_id = selectedCategory!!.id,
+                    brand_id = selectedBrand!!.id,
+                    img_url = uploadedImageUrl ?: "",
+                    variants = validVariants
+                )
+
+                val json = Gson().toJson(productRequest)
+                Log.d("UpdatePro_ductScreen", "Request JSON: $json")
+
+                val productRepo = ProductRepository()
+                val updatedProduct = productRepo.updateProduct(productId, productRequest)
+                Log.d("UpdatePro_ductScreen", "API Response: $updatedProduct")
+
+                if (updatedProduct != null) {
+                    showSuccessMessage = true
+                    kotlinx.coroutines.delay(1500)
+                    onProductUpdated()
+                } else {
+                    errorMessage = "Không thể cập nhật sản phẩm. Vui lòng thử lại."
+                }
+            } catch (e: Exception) {
+                Log.e("UpdatePro_ductScreen", "Error updating product: ${e.message}", e)
+                errorMessage = "Đã có lỗi xảy ra: ${e.message}"
+            } finally {
+                isLoading = false
+            }
+        }
+    }
+
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Cập nhật sản phẩm") },
+                title = { Text("Cập nhật sản phẩm", fontWeight = FontWeight.Bold) },
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(onClick = onBack, enabled = !isLoading) {
                         Icon(Icons.Default.ArrowBack, contentDescription = "Quay lại")
                     }
-                }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = MaterialTheme.colorScheme.primary,
+                    titleContentColor = MaterialTheme.colorScheme.onPrimary,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onPrimary
+                )
             )
         }
     ) { paddingValues ->
-        val scrollState = rememberScrollState()
-        Column(
+        Box(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .verticalScroll(scrollState)
-                .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
-            if (isLoading) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    CircularProgressIndicator()
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(16.dp)
+            ) {
+                // Error message
+                errorMessage?.let { message ->
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = MaterialTheme.colorScheme.errorContainer
+                        )
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(16.dp),
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Icon(
+                                Icons.Default.Info,
+                                contentDescription = null,
+                                tint = MaterialTheme.colorScheme.onErrorContainer,
+                                modifier = Modifier.padding(end = 8.dp)
+                            )
+                            Text(
+                                text = message,
+                                color = MaterialTheme.colorScheme.onErrorContainer,
+                                style = MaterialTheme.typography.bodyMedium
+                            )
+                        }
+                    }
                 }
-            } else if (error != null || errorMessage != null) {
-                Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                    Text(
-                        text = error ?: errorMessage ?: "",
-                        color = MaterialTheme.colorScheme.error
+
+                // Success message
+                if (showSuccessMessage) {
+                    Card(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(bottom = 16.dp),
+                        colors = CardDefaults.cardColors(
+                            containerColor = Color(0xFF4CAF50).copy(alpha = 0.1f)
+                        )
+                    ) {
+                        Text(
+                            text = "✓ Cập nhật sản phẩm thành công!",
+                            modifier = Modifier.padding(16.dp),
+                            color = Color(0xFF4CAF50),
+                            style = MaterialTheme.typography.bodyMedium,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                }
+
+                // Tab Row
+                TabRow(
+                    selectedTabIndex = selectedTab,
+                    modifier = Modifier.padding(bottom = 16.dp)
+                ) {
+                    Tab(
+                        selected = selectedTab == 0,
+                        onClick = { selectedTab = 0 },
+                        text = { Text("Thông tin cơ bản") }
+                    )
+                    Tab(
+                        selected = selectedTab == 1,
+                        onClick = { selectedTab = 1 },
+                        text = { Text("Biến thể sản phẩm") }
                     )
                 }
-            } else {
-                OutlinedTextField(
-                    value = productName,
-                    onValueChange = { productName = it },
-                    label = { Text("Tên sản phẩm") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                OutlinedTextField(
-                    value = price,
-                    onValueChange = { price = it },
-                    label = { Text("Giá") },
-                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                    modifier = Modifier.fillMaxWidth()
-                )
 
-                OutlinedTextField(
-                    value = description,
-                    onValueChange = { description = it },
-                    label = { Text("Mô tả") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-                CategoryDropdown(categories, selectedCategory) { selectedCategory = it }
-                BrandDropdown(brands, selectedBrand) { selectedBrand = it }
+                // Tab Content
+                when (selectedTab) {
+                    0 -> BasicInfoTab(
+                        productName = productName,
+                        onProductNameChange = {
+                            productName = it
+                            productNameError = null
+                        },
+                        productNameError = productNameError,
+                        price = price,
+                        onPriceChange = {
+                            price = it
+                            priceError = null
+                        },
+                        priceError = priceError,
+                        description = description,
+                        onDescriptionChange = { description = it },
+                        selectedCategory = selectedCategory,
+                        onCategorySelected = { selectedCategory = it },
+                        selectedBrand = selectedBrand,
+                        onBrandSelected = { selectedBrand = it },
+                        selectedImageUri = selectedImageUri,
+                        onImageSelected = { imagePickerLauncher.launch("image/*") },
+                        categories = categories,
+                        brands = brands,
+                        onContinue = {
+                            if (validateBasicInfo()) {
+                                selectedTab = 1
+                            }
+                        },
+                        isLoading = isLoading
+                    )
+                    1 -> VariantsTab(
+                        variants = variants,
+                        onVariantsChange = { variants = it },
+                        onCreateProduct = ::updateProduct,
+                        isLoading = isLoading
+                    )
+                }
+            }
+
+            // Loading overlay
+            if (isLoading) {
                 Box(
                     modifier = Modifier
-                        .height(180.dp)
-                        .fillMaxWidth()
-                        .clickable { imagePickerLauncher.launch("image/*") }
+                        .fillMaxSize()
+                        .background(Color.Black.copy(alpha = 0.5f)),
+                    contentAlignment = Alignment.Center
                 ) {
-                    if (selectedImageUri != null) {
-                        Image(
-                            painter = rememberAsyncImagePainter(selectedImageUri),
-                            contentDescription = "Ảnh đã chọn",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else if (uploadedImageUrl != null) {
-                        Image(
-                            painter = rememberAsyncImagePainter("${BASE_URL_IMG}$uploadedImageUrl"),
-                            contentDescription = "Ảnh đã upload",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    } else {
-                        Image(
-                            painter = rememberAsyncImagePainter(uploadedImageUrl),
-                            contentDescription = "Ảnh mặc định",
-                            contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize()
-                        )
-                    }
-                }
-                Log.d("UpdateProductScreen1", "Hiển thị ảnh đã tải lên: $uploadedImageUrl")
-                val variantList = remember { mutableStateListOf(ProductVariantRequest("", "", "", 0)) }
-
-                variantList.forEachIndexed { index, variant ->
-                    Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        OutlinedTextField(
-                            value = variant.color,
-                            onValueChange = { variantList[index] = variant.copy(color = it) },
-                            label = { Text("Màu sắc") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = variant.size,
-                            onValueChange = { variantList[index] = variant.copy(size = it) },
-                            label = { Text("Kích cỡ") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = variant.material,
-                            onValueChange = { variantList[index] = variant.copy(material = it) },
-                            label = { Text("Chất liệu") },
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        OutlinedTextField(
-                            value = variant.stock_quantity.toString(),
-                            onValueChange = {
-                                variantList[index] = variant.copy(stock_quantity = it.toIntOrNull() ?: 0)
-                            },
-                            label = { Text("Số lượng") },
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                        Row {
-                            if (index > 0) {
-                                Button(
-                                    onClick = { variantList.removeAt(index) },
-                                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error)
-                                ) {
-                                    Text("Xóa")
-                                }
-                            }
+                    Card(
+                        modifier = Modifier.padding(32.dp),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(48.dp)
+                            )
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(
+                                text = "Đang cập nhật sản phẩm...",
+                                style = MaterialTheme.typography.bodyLarge,
+                                fontWeight = FontWeight.Medium
+                            )
                         }
                     }
                 }
-
-// Nút thêm biến thể
-                Button(onClick = {
-                    variantList.add(ProductVariantRequest("", "", "", 0))
-                }) {
-                    Text("Thêm biến thể")
-                }
-
-                Button(
-                    onClick = {
-                        coroutineScope.launch {
-                            if (selectedCategory != null && selectedBrand != null) {
-//                                val priceInt = price.toIntOrNull() ?: run {
-//                                    errorMessage = "Giá phải là số hợp lệ"
-//                                    return@launch
-//                                }
-                                if (selectedImageUri != null) {
-                                    val uri = selectedImageUri // Lấy giá trị hiện tại
-                                    val file = FileUtils.getFileFromUri(context, uri!!) // Sử dụng !! vì đã kiểm tra null
-                                    file?.let {
-                                        val mimeType = context.contentResolver.getType(uri!!)
-                                        if (mimeType == null || !listOf("image/jpeg", "image/jpg", "image/png", "image/gif").contains(mimeType)) {
-                                            errorMessage = "Định dạng file không hỗ trợ"
-                                            return@launch
-                                        }
-                                        val requestFile = it.asRequestBody(mimeType?.toMediaTypeOrNull() ?: "image/jpeg".toMediaTypeOrNull())
-                                        val imagePart = MultipartBody.Part.createFormData("image", it.name, requestFile)
-                                        val uploadRepo = UploadRepository(context)
-                                        val uploadResponse = uploadRepo.uploadImage(productId, imagePart)
-                                        if (uploadResponse.isSuccessful) {
-                                            uploadedImageUrl = uploadResponse.body()?.imageUrl
-                                            Log.d("Upload", "Upload ảnh thành công: $uploadedImageUrl")
-                                        } else {
-                                            errorMessage = "Upload ảnh thất bại: ${uploadResponse.message()}"
-                                            return@launch
-                                        }
-                                    } ?: run { errorMessage = "Không thể truy cập file" }
-                                }
-
-                                val updatedProductRequest = ProductCreateRequest(
-                                    product_name = productName,
-                                    price = price.toInt(),
-                                    description = description.ifEmpty { null },
-                                    category_id = selectedCategory!!.id,
-                                    brand_id = selectedBrand!!.id,
-                                    image_url = uploadedImageUrl ?: "",
-
-                                )
-                                productViewModel.updateProduct(productId, updatedProductRequest) { success ->
-                                    if (success) {
-                                        onProductUpdated() // Hoàn tất sau khi cập nhật dữ liệu
-                                        Log.d("UpdateProductScreen", "Cập nhật sản phẩm thành công")
-                                    } else {
-                                        errorMessage = "Cập nhật sản phẩm thất bại: ${productViewModel.error.value}"
-                                    }
-                                }
-                            } else {
-                                errorMessage = "Vui lòng chọn danh mục và thương hiệu"
-                            }
-                        }
-                    },
-                    enabled = selectedCategory != null && selectedBrand != null,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    Text("Cập nhật sản phẩm")
-                    Log.d("UpdateProductScreen", "Cập nhật sản phẩm: $productName, $price, $description, ${selectedCategory?.category_name}, ${selectedBrand?.brand_name}, $uploadedImageUrl")
-                }
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun CategoryDropdown(
-    categories: List<Category>,
-    selected: Category?,
-    onSelected: (Category) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-        TextField(
-            readOnly = true,
-            value = selected?.category_name ?: "",
-            onValueChange = {},
-            label = { Text("Danh mục") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor()
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            categories.forEach {
-                DropdownMenuItem(
-                    text = { Text(it.category_name) },
-                    onClick = {
-                        onSelected(it)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun BrandDropdown(
-    brands: List<Brand>,
-    selected: Brand?,
-    onSelected: (Brand) -> Unit
-) {
-    var expanded by remember { mutableStateOf(false) }
-
-    ExposedDropdownMenuBox(expanded = expanded, onExpandedChange = { expanded = !expanded }) {
-        TextField(
-            readOnly = true,
-            value = selected?.brand_name ?: "",
-            onValueChange = {},
-            label = { Text("Thương hiệu") },
-            trailingIcon = { ExposedDropdownMenuDefaults.TrailingIcon(expanded = expanded) },
-            modifier = Modifier.menuAnchor()
-        )
-        ExposedDropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            brands.forEach {
-                DropdownMenuItem(
-                    text = { Text(it.brand_name) },
-                    onClick = {
-                        onSelected(it)
-                        expanded = false
-                    }
-                )
             }
         }
     }

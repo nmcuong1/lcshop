@@ -21,8 +21,16 @@ class CartViewModel(private val repository: CartRepository) : ViewModel() {
     private val _error = MutableStateFlow<String?>(null)
     val error: StateFlow<String?> = _error
 
+    private val _addToCartSuccess = MutableStateFlow(false)
+    val addToCartSuccess: StateFlow<Boolean> = _addToCartSuccess
+
+
     init {
         fetchCart()
+    }
+
+    fun resetAddToCartSuccess() {
+        _addToCartSuccess.value = false
     }
 
     fun fetchCart() {
@@ -41,41 +49,42 @@ class CartViewModel(private val repository: CartRepository) : ViewModel() {
         }
     }
 
-//    fun addToCart(request: CartRequest) {
-//        viewModelScope.launch {
-//            try {
-//                repository.addToCart(request)
-//                fetchCart() // Refresh cart after adding
-//            } catch (e: Exception) {
-//                _error.value = e.message
-//                Log.e("CartViewModel", "addToCart error", e)
-//            }
-//        }
-//    }
+    fun addToCart(request: CartRequest) {
+        viewModelScope.launch {
+            try {
+                repository.addToCart(request)
+                _addToCartSuccess.value = true
+                fetchCart()
+            } catch (e: Exception) {
+                _error.value = e.message
+                Log.e("CartViewModel", "addToCart error", e)
+            }
+        }
+    }
 //
-//    fun updateCartItem(request: CartItemUpdateRequest) {
-//        viewModelScope.launch {
-//            try {
-//                repository.updateCartItem(request)
-//                fetchCart() // Refresh cart after updating
-//            } catch (e: Exception) {
-//                _error.value = e.message
-//                Log.e("CartViewModel", "updateCartItem error", e)
-//            }
-//        }
-//    }
-//
-//    fun removeFromCart(cartItemId: Int) {
-//        viewModelScope.launch {
-//            try {
-//                repository.removeFromCart(cartItemId)
-//                fetchCart() // Refresh cart after removing
-//            } catch (e: Exception) {
-//                _error.value = e.message
-//                Log.e("CartViewModel", "removeFromCart error", e)
-//            }
-//        }
-//    }
+    fun updateCartItem(request: CartRequestUpdate) {
+        viewModelScope.launch {
+            try {
+                repository.updateCartItem(request)
+                fetchCart() // Refresh cart after updating
+            } catch (e: Exception) {
+                _error.value = e.message
+                Log.e("CartViewModel", "updateCartItem error", e)
+            }
+        }
+    }
+
+    fun removeFromCart(cartItemId: Int) {
+        viewModelScope.launch {
+            try {
+                repository.removeFromCart(cartItemId)
+                fetchCart() // Refresh cart after removing
+            } catch (e: Exception) {
+                _error.value = e.message
+                Log.e("CartViewModel", "removeFromCart error", e)
+            }
+        }
+    }
 }
 
 class CartViewModelFactory(private val repository: CartRepository) : ViewModelProvider.Factory {

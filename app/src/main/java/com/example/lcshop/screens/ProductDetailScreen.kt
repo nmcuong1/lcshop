@@ -28,6 +28,11 @@ import androidx.compose.foundation.Image
 import androidx.compose.ui.layout.ContentScale
 import coil.compose.rememberAsyncImagePainter
 import com.example.lcshop.config.Constants.BASE_URL_IMG
+import com.example.lcshop.config.RetrofitInstance
+import com.example.lcshop.data.model.CartRequest
+import com.example.lcshop.repository.CartRepository
+import com.example.lcshop.viewmodel.CartViewModel
+import com.example.lcshop.viewmodel.CartViewModelFactory
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,6 +41,18 @@ fun ProductDetailScreen(navController: NavHostController, productId: Int) {
 
     val repository = remember { ProductRepository() }
     val productViewModel: ProductViewModel = viewModel(factory = ProductViewModelFactory(repository))
+    val cartViewModel: CartViewModel = viewModel(factory = CartViewModelFactory(CartRepository(RetrofitInstance.cartApi)))
+
+    val snackbarHostState = remember { SnackbarHostState() }
+    val addSuccess by cartViewModel.addToCartSuccess.collectAsState()
+
+    LaunchedEffect(addSuccess) {
+        if (addSuccess) {
+            snackbarHostState.showSnackbar("Đã thêm vào giỏ hàng")
+            // Reset lại sau khi hiển thị
+            cartViewModel.resetAddToCartSuccess()
+        }
+    }
 
     // Lấy dữ liệu sản phẩm theo ID
     LaunchedEffect(Unit) {
@@ -51,6 +68,7 @@ fun ProductDetailScreen(navController: NavHostController, productId: Int) {
     var selectedSize by remember { mutableStateOf<String?>(null) }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(hostState = snackbarHostState) },
         topBar = {
             TopAppBar(
                 title = { Text("Chi tiết sản phẩm", color = Color.White) },
@@ -125,7 +143,7 @@ fun ProductDetailScreen(navController: NavHostController, productId: Int) {
                     // Colors
                     Text("Màu sắc", fontSize = 16.sp)
                     Row(modifier = Modifier.padding(top = 4.dp)) {
-                        p.ProductVariants?.mapNotNull { it.color }?.distinct()?.forEach { color ->
+                        p.variants?.mapNotNull { it.color }?.distinct()?.forEach { color ->
                             val isSelected = selectedColor == color
                             Box(
                                 modifier = Modifier
@@ -163,7 +181,7 @@ fun ProductDetailScreen(navController: NavHostController, productId: Int) {
                     // Sizes
                     Text("Kích thước", fontSize = 16.sp)
                     Row(modifier = Modifier.padding(top = 4.dp)) {
-                        p.ProductVariants?.mapNotNull { it.size }?.distinct()?.forEach { size ->
+                        p.variants?.mapNotNull { it.size }?.distinct()?.forEach { size ->
                             val isSelected = selectedSize == size
                             Box(
                                 modifier = Modifier
@@ -175,7 +193,7 @@ fun ProductDetailScreen(navController: NavHostController, productId: Int) {
                                     .clickable {
                                         selectedSize = if (isSelected) null else size
                                         // Cập nhật quantity dựa trên stock của variant
-                                        val variant = p.ProductVariants?.find {
+                                        val variant = p.variants?.find {
                                             it.color == selectedColor && it.size == size
                                         }
                                         quantity = if (variant?.stock_quantity ?: 0 > 0) 1 else 0
@@ -222,7 +240,7 @@ fun ProductDetailScreen(navController: NavHostController, productId: Int) {
                                 fontSize = 20.sp,
                                 modifier = Modifier
                                     .clickable {
-                                        val variant = p.ProductVariants?.find {
+                                        val variant = p.variants?.find {
                                             it.color == selectedColor && it.size == selectedSize
                                         }
                                         if (quantity < (variant?.stock_quantity ?: 0)) {
@@ -236,7 +254,19 @@ fun ProductDetailScreen(navController: NavHostController, productId: Int) {
                         Spacer(modifier = Modifier.width(16.dp))
 
                         Button(
-                            onClick = { /* TODO: Thêm vào giỏ hàng */ },
+                            onClick = {
+                                val selectedVariant = product?.variants?.find {
+                                it.color == selectedColor && it.size == selectedSize
+                            }
+                                selectedVariant?.let { variant ->
+                                    val request = CartRequest(
+                                        product_id = productId,
+                                        product_variant_id = variant?.id ?: 0,
+                                        quantity = quantity
+                                    )
+                                    cartViewModel.addToCart(request)
+                                }
+                            },
                             modifier = Modifier.height(48.dp),
                             colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF1976D2)),
                             enabled = selectedColor != null && selectedSize != null && quantity > 0

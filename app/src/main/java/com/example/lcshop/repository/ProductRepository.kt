@@ -28,7 +28,12 @@ class ProductRepository {
     suspend fun getProductById(id: Int): Product? = withContext(Dispatchers.IO) {
         try {
             val response = productApi.getProductById(id)
-            if (response.isSuccessful) response.body() else null
+            if (response.isSuccessful)
+            {
+                Log.d("ProductRepository", "Response body: ${response.body()}")
+                response.body()
+            }
+            else null
         } catch (e: Exception) {
             null
         }
@@ -37,8 +42,13 @@ class ProductRepository {
     suspend fun createProduct(product: ProductCreateRequest): Product? = withContext(Dispatchers.IO) {
         try {
             val response = productApi.createProduct(product)
+            Log.d("ProductRepository", "Failed to create product: ${response.code()} - ${response.message()}")
             if (response.isSuccessful) {
-                response.body()?.product
+                val body=  response.body()
+                response.body()
+                Log.d("ProductRepository", "Response body: $body")
+                body?.fullProduct
+
             } else {
                 // Log lỗi chi tiết nếu cần
                 println("❌ Failed to create product: ${response.code()} - ${response.message()}")

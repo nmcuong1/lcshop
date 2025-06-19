@@ -1,7 +1,7 @@
 package com.example.lcshop.data.model
 
 data class ProductVariant(
-    val id: Int,
+    val id: Int ?=null,
     val color: String,
     val size: String,
     val material: String,
